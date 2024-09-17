@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
+        uses: gradle/wrapper-validation-action@v3
 
   build:
     name: Build Jar
@@ -38,6 +38,9 @@ jobs:
           java-version: 8
           distribution: 'temurin'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Copy CI gradle.properties
         run: |
           cd master
@@ -45,22 +48,20 @@ jobs:
           cp .github/runner-files/ci-gradle.properties ~/.gradle/gradle.properties
 
       - name: Build Jar
-        uses: gradle/gradle-build-action@v2
         env:
           ProductBuildType: "Preview"
-        with:
-          build-root-directory: master
-          arguments: :server:shadowJar --stacktrace
+        working-directory: master
+        run: ./gradlew :server:shadowJar --stacktrace
 
       - name: Upload Jar
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jar
           path: master/server/build/*.jar
           if-no-files-found: error
 
       - name: Upload icons
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: icon
           path: master/server/src/main/resources/icon
@@ -70,7 +71,7 @@ jobs:
         run: tar -cvzf scripts.tar.gz -C master/ scripts/
 
       - name: Upload scripts.tar.gz
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: scripts
           path: scripts.tar.gz
@@ -94,19 +95,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Jar
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: jar
           path: server/build
 
       - name: Download icons
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: icon
           path: server/src/main/resources/icon
 
       - name: Download scripts.tar.gz
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: scripts
 
@@ -117,7 +118,7 @@ jobs:
           scripts/bundler.sh -o upload/ ${{ matrix.os }}
 
       - name: Upload ${{ matrix.os }} release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}
           path: upload/*
@@ -127,41 +128,41 @@ jobs:
     needs: bundle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: jar
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: debian-all
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: linux-assets
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: linux-x64
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: macOS-x64
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: macOS-arm64
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: windows-x64
           path: release
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: windows-x86
           path: release
 
       - name: Checkout Preview branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: "Suwayomi/Suwayomi-Server-preview"
           ref: main
@@ -193,7 +194,7 @@ jobs:
           git push origin $TAG
 
       - name: Upload Preview Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.DEPLOY_PREVIEW_TOKEN }}
           repository: "Suwayomi/Suwayomi-Server-preview"

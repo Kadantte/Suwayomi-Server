@@ -36,10 +36,10 @@ import suwayomi.tachidesk.manga.impl.backup.models.Chapter
 import suwayomi.tachidesk.manga.impl.backup.models.Manga
 import suwayomi.tachidesk.manga.impl.backup.proto.ProtoBackupValidator.ValidationResult
 import suwayomi.tachidesk.manga.impl.backup.proto.ProtoBackupValidator.validate
+import suwayomi.tachidesk.manga.impl.backup.proto.models.Backup
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupCategory
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupHistory
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupManga
-import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupSerializer
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupTracking
 import suwayomi.tachidesk.manga.impl.track.tracker.TrackerManager
 import suwayomi.tachidesk.manga.impl.track.tracker.model.toTrack
@@ -74,18 +74,22 @@ object ProtoBackupImport : ProtoBackupBase() {
 
         data object Failure : BackupRestoreState()
 
-        data class RestoringCategories(val totalManga: Int) : BackupRestoreState()
+        data class RestoringCategories(
+            val totalManga: Int,
+        ) : BackupRestoreState()
 
-        data class RestoringManga(val current: Int, val totalManga: Int, val title: String) : BackupRestoreState()
+        data class RestoringManga(
+            val current: Int,
+            val totalManga: Int,
+            val title: String,
+        ) : BackupRestoreState()
     }
 
     private val backupRestoreIdToState = mutableMapOf<String, BackupRestoreState>()
 
     val notifyFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = DROP_OLDEST)
 
-    fun getRestoreState(id: String): BackupRestoreState? {
-        return backupRestoreIdToState[id]
-    }
+    fun getRestoreState(id: String): BackupRestoreState? = backupRestoreIdToState[id]
 
     private fun updateRestoreState(
         id: String,
@@ -131,8 +135,8 @@ object ProtoBackupImport : ProtoBackupBase() {
     suspend fun restoreLegacy(
         sourceStream: InputStream,
         restoreId: String = "legacy",
-    ): ValidationResult {
-        return backupMutex.withLock {
+    ): ValidationResult =
+        backupMutex.withLock {
             try {
                 logger.info { "restore($restoreId): restoring..." }
                 performRestore(restoreId, sourceStream)
@@ -151,14 +155,18 @@ object ProtoBackupImport : ProtoBackupBase() {
                 cleanupRestoreState(restoreId)
             }
         }
-    }
 
     private fun performRestore(
         id: String,
         sourceStream: InputStream,
     ): ValidationResult {
-        val backupString = sourceStream.source().gzip().buffer().use { it.readByteArray() }
-        val backup = parser.decodeFromByteArray(BackupSerializer, backupString)
+        val backupString =
+            sourceStream
+                .source()
+                .gzip()
+                .buffer()
+                .use { it.readByteArray() }
+        val backup = parser.decodeFromByteArray(Backup.serializer(), backupString)
 
         val validationResult = validate(backup)
 
@@ -174,7 +182,8 @@ object ProtoBackupImport : ProtoBackupBase() {
             transaction {
                 backup.backupCategories.associate {
                     val dbCategory =
-                        CategoryTable.select { CategoryTable.name eq it.name }
+                        CategoryTable
+                            .select { CategoryTable.name eq it.name }
                             .firstOrNull()
                     val categoryId =
                         dbCategory?.let { categoryResultRow ->
@@ -243,7 +252,7 @@ object ProtoBackupImport : ProtoBackupBase() {
         val manga = backupManga.getMangaImpl()
         val chapters = backupManga.getChaptersImpl()
         val categories = backupManga.categories
-        val history = backupManga.brokenHistory.map { BackupHistory(it.url, it.lastRead) } + backupManga.history
+        val history = backupManga.history
 
         try {
             restoreMangaData(manga, chapters, categories, history, backupManga.tracking, backupCategories, categoryMapping)
@@ -265,7 +274,8 @@ object ProtoBackupImport : ProtoBackupBase() {
     ) {
         val dbManga =
             transaction {
-                MangaTable.select { (MangaTable.url eq manga.url) and (MangaTable.sourceReference eq manga.source) }
+                MangaTable
+                    .select { (MangaTable.url eq manga.url) and (MangaTable.sourceReference eq manga.source) }
                     .firstOrNull()
             }
 
@@ -274,26 +284,27 @@ object ProtoBackupImport : ProtoBackupBase() {
                 transaction {
                     // insert manga to database
                     val mangaId =
-                        MangaTable.insertAndGetId {
-                            it[url] = manga.url
-                            it[title] = manga.title
+                        MangaTable
+                            .insertAndGetId {
+                                it[url] = manga.url
+                                it[title] = manga.title
 
-                            it[artist] = manga.artist
-                            it[author] = manga.author
-                            it[description] = manga.description
-                            it[genre] = manga.genre
-                            it[status] = manga.status
-                            it[thumbnail_url] = manga.thumbnail_url
-                            it[updateStrategy] = manga.update_strategy.name
+                                it[artist] = manga.artist
+                                it[author] = manga.author
+                                it[description] = manga.description
+                                it[genre] = manga.genre
+                                it[status] = manga.status
+                                it[thumbnail_url] = manga.thumbnail_url
+                                it[updateStrategy] = manga.update_strategy.name
 
-                            it[sourceReference] = manga.source
+                                it[sourceReference] = manga.source
 
-                            it[initialized] = manga.description != null
+                                it[initialized] = manga.description != null
 
-                            it[inLibrary] = manga.favorite
+                                it[inLibrary] = manga.favorite
 
-                            it[inLibraryAt] = TimeUnit.MILLISECONDS.toSeconds(manga.date_added)
-                        }.value
+                                it[inLibraryAt] = TimeUnit.MILLISECONDS.toSeconds(manga.date_added)
+                            }.value
 
                     // delete thumbnail in case cached data still exists
                     clearThumbnail(mangaId)
@@ -394,34 +405,36 @@ object ProtoBackupImport : ProtoBackupBase() {
             }
 
         val dbTrackRecordsByTrackerId =
-            Tracker.getTrackRecordsByMangaId(mangaId)
+            Tracker
+                .getTrackRecordsByMangaId(mangaId)
                 .mapNotNull { it.record?.toTrack() }
                 .associateBy { it.sync_id }
 
         val (existingTracks, newTracks) =
-            tracks.mapNotNull { backupTrack ->
-                val track = backupTrack.toTrack(mangaId)
+            tracks
+                .mapNotNull { backupTrack ->
+                    val track = backupTrack.toTrack(mangaId)
 
-                val isUnsupportedTracker = TrackerManager.getTracker(track.sync_id) == null
-                if (isUnsupportedTracker) {
-                    return@mapNotNull null
-                }
+                    val isUnsupportedTracker = TrackerManager.getTracker(track.sync_id) == null
+                    if (isUnsupportedTracker) {
+                        return@mapNotNull null
+                    }
 
-                val dbTrack =
-                    dbTrackRecordsByTrackerId[backupTrack.syncId]
-                        ?: // new track
-                        return@mapNotNull track
+                    val dbTrack =
+                        dbTrackRecordsByTrackerId[backupTrack.syncId]
+                            ?: // new track
+                            return@mapNotNull track
 
-                if (track.toTrackRecordDataClass().forComparison() == dbTrack.toTrackRecordDataClass().forComparison()) {
-                    return@mapNotNull null
-                }
+                    if (track.toTrackRecordDataClass().forComparison() == dbTrack.toTrackRecordDataClass().forComparison()) {
+                        return@mapNotNull null
+                    }
 
-                dbTrack.also {
-                    it.media_id = track.media_id
-                    it.library_id = track.library_id
-                    it.last_chapter_read = max(dbTrack.last_chapter_read, track.last_chapter_read)
-                }
-            }.partition { (it.id ?: -1) > 0 }
+                    dbTrack.also {
+                        it.media_id = track.media_id
+                        it.library_id = track.library_id
+                        it.last_chapter_read = max(dbTrack.last_chapter_read, track.last_chapter_read)
+                    }
+                }.partition { (it.id ?: -1) > 0 }
 
         existingTracks.forEach(Tracker::updateTrackRecord)
         newTracks.forEach(Tracker::insertTrackRecord)

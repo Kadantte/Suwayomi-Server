@@ -1,5 +1,6 @@
 package suwayomi.tachidesk.manga.impl.download.fileProvider
 
+import eu.kanade.tachiyomi.source.local.metadata.COMIC_INFO_FILE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -7,6 +8,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.sample
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.jetbrains.exposed.sql.select
 import org.jetbrains.exposed.sql.transactions.transaction
 import suwayomi.tachidesk.manga.impl.Page
@@ -20,15 +22,61 @@ import suwayomi.tachidesk.manga.model.table.MangaTable
 import java.io.File
 import java.io.InputStream
 
+sealed class FileType {
+    data class RegularFile(
+        val file: File,
+    ) : FileType()
+
+    data class ZipFile(
+        val entry: ZipArchiveEntry,
+    ) : FileType()
+
+    fun getName(): String =
+        when (this) {
+            is FileType.RegularFile -> {
+                this.file.name
+            }
+            is FileType.ZipFile -> {
+                this.entry.name
+            }
+        }
+
+    fun getExtension(): String =
+        when (this) {
+            is FileType.RegularFile -> {
+                this.file.extension
+            }
+            is FileType.ZipFile -> {
+                this.entry.name.substringAfterLast(".")
+            }
+        }
+}
+
 /*
 * Base class for downloaded chapter files provider, example: Folder, Archive
 */
-abstract class ChaptersFilesProvider(val mangaId: Int, val chapterId: Int) : DownloadedFilesProvider {
-    abstract fun getImageImpl(index: Int): Pair<InputStream, String>
+abstract class ChaptersFilesProvider<Type : FileType>(
+    val mangaId: Int,
+    val chapterId: Int,
+) : DownloadedFilesProvider {
+    protected abstract fun getImageFiles(): List<Type>
 
-    override fun getImage(): RetrieveFile1Args<Int> {
-        return RetrieveFile1Args(::getImageImpl)
+    protected abstract fun getImageInputStream(image: Type): InputStream
+
+    fun getImageImpl(index: Int): Pair<InputStream, String> {
+        val images = getImageFiles().filter { it.getName() != COMIC_INFO_FILE }.sortedBy { it.getName() }
+
+        if (images.isEmpty()) {
+            throw Exception("no downloaded images found")
+        }
+
+        val image = images[index]
+        val imageFileType = image.getExtension()
+
+        return Pair(getImageInputStream(image).buffered(), "image/$imageFileType")
     }
+
+    override fun getImage(): RetrieveFile1Args<Int> = RetrieveFile1Args(::getImageImpl)
 
     /**
      * Extract the existing download to the base download folder (see [getChapterDownloadPath])
@@ -65,21 +113,22 @@ abstract class ChaptersFilesProvider(val mangaId: Int, val chapterId: Int) : Dow
             }
 
             try {
-                Page.getPageImage(
-                    mangaId = download.mangaId,
-                    chapterIndex = download.chapterIndex,
-                    index = pageNum,
-                ) { flow ->
-                    pageProgressJob =
-                        flow
-                            .sample(100)
-                            .distinctUntilChanged()
-                            .onEach {
-                                download.progress = (pageNum.toFloat() + (it.toFloat() * 0.01f)) / pageCount
-                                step(null, false) // don't throw on canceled download here since we can't do anything
-                            }
-                            .launchIn(scope)
-                }.first.close()
+                Page
+                    .getPageImage(
+                        mangaId = download.mangaId,
+                        chapterIndex = download.chapterIndex,
+                        index = pageNum,
+                    ) { flow ->
+                        pageProgressJob =
+                            flow
+                                .sample(100)
+                                .distinctUntilChanged()
+                                .onEach {
+                                    download.progress = (pageNum.toFloat() + (it.toFloat() * 0.01f)) / pageCount
+                                    step(null, false) // don't throw on canceled download here since we can't do anything
+                                }.launchIn(scope)
+                    }.first
+                    .close()
             } finally {
                 // always cancel the page progress job even if it throws an exception to avoid memory leaks
                 pageProgressJob?.cancel()
@@ -106,9 +155,8 @@ abstract class ChaptersFilesProvider(val mangaId: Int, val chapterId: Int) : Dow
         return true
     }
 
-    override fun download(): FileDownload3Args<DownloadChapter, CoroutineScope, suspend (DownloadChapter?, Boolean) -> Unit> {
-        return FileDownload3Args(::downloadImpl)
-    }
+    override fun download(): FileDownload3Args<DownloadChapter, CoroutineScope, suspend (DownloadChapter?, Boolean) -> Unit> =
+        FileDownload3Args(::downloadImpl)
 
     abstract override fun delete(): Boolean
 }

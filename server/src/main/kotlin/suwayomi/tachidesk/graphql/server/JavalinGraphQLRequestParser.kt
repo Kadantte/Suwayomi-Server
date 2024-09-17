@@ -13,11 +13,15 @@ import com.expediagroup.graphql.server.types.GraphQLRequest
 import com.expediagroup.graphql.server.types.GraphQLServerRequest
 import io.javalin.http.Context
 import io.javalin.http.UploadedFile
-import io.javalin.plugin.json.jsonMapper
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import java.io.IOException
 
 class JavalinGraphQLRequestParser : GraphQLRequestParser<Context> {
-    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE", "UNCHECKED_CAST")
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override suspend fun parseRequest(context: Context): GraphQLServerRequest? {
         return try {
             val contentType = context.contentType()
@@ -29,35 +33,35 @@ class JavalinGraphQLRequestParser : GraphQLRequestParser<Context> {
                     context.formParam("operations")
                         ?: throw IllegalArgumentException("Cannot find 'operations' body")
                 } else {
-                    return context.bodyAsClass(GraphQLServerRequest::class.java)
+                    return Json.decodeFromStream<GraphQLServerRequest>(context.bodyAsInputStream())
                 }
 
             val request =
-                context.jsonMapper().fromJsonString(
-                    formParam,
-                    GraphQLServerRequest::class.java,
-                )
+                Json.decodeFromString<GraphQLServerRequest>(formParam)
             val map =
-                context.formParam("map")?.let {
-                    context.jsonMapper().fromJsonString(
-                        it,
-                        Map::class.java as Class<Map<String, List<String>>>,
-                    )
-                }.orEmpty()
+                context
+                    .formParam("map")
+                    ?.let {
+                        Json.decodeFromString(
+                            MapSerializer(String.serializer(), ListSerializer(String.serializer())),
+                            it,
+                        )
+                    }.orEmpty()
 
             val mapItems =
-                map.flatMap { (key, variables) ->
-                    val file = context.uploadedFile(key)
-                    variables.map { fullVariable ->
-                        val variable = fullVariable.removePrefix("variables.").substringBefore('.')
-                        val listIndex = fullVariable.substringAfterLast('.').toIntOrNull()
-                        MapItem(
-                            variable,
-                            listIndex,
-                            file,
-                        )
-                    }
-                }.groupBy { it.variable }
+                map
+                    .flatMap { (key, variables) ->
+                        val file = context.uploadedFile(key)
+                        variables.map { fullVariable ->
+                            val variable = fullVariable.removePrefix("variables.").substringBefore('.')
+                            val listIndex = fullVariable.substringAfterLast('.').toIntOrNull()
+                            MapItem(
+                                variable,
+                                listIndex,
+                                file,
+                            )
+                        }
+                    }.groupBy { it.variable }
 
             when (request) {
                 is GraphQLRequest -> {
@@ -91,8 +95,8 @@ class JavalinGraphQLRequestParser : GraphQLRequestParser<Context> {
      * Example map "{ "0": ["variables.file"] }"
      * TODO nested objects
      */
-    private fun Map<String, Any?>.modifyFiles(map: Map<String, List<MapItem>>): Map<String, Any?> {
-        return mapValues { (name, value) ->
+    private fun Map<String, Any?>.modifyFiles(map: Map<String, List<MapItem>>): Map<String, Any?> =
+        mapValues { (name, value) ->
             if (map.containsKey(name)) {
                 val items = map[name].orEmpty()
                 if (items.size > 1) {
@@ -110,5 +114,4 @@ class JavalinGraphQLRequestParser : GraphQLRequestParser<Context> {
                 value
             }
         }
-    }
 }

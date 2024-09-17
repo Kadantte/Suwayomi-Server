@@ -117,12 +117,12 @@ object CFClearance {
         serverConfig.flareSolverrTimeout
             .map { timeoutInt ->
                 val timeout = timeoutInt.seconds
-                network.client.newBuilder()
+                network.client
+                    .newBuilder()
                     .callTimeout(timeout.plus(10.seconds).toJavaDuration())
                     .readTimeout(timeout.plus(5.seconds).toJavaDuration())
                     .build()
-            }
-            .stateIn(GlobalScope, SharingStarted.Eagerly, network.client)
+            }.stateIn(GlobalScope, SharingStarted.Eagerly, network.client)
     }
     private val json: Json by injectLazy()
     private val jsonMediaType = "application/json".toMediaType()
@@ -153,13 +153,13 @@ object CFClearance {
         val name: String,
         val value: String,
         val domain: String,
-        val path: String,
+        val path: String? = null,
         val expires: Double? = null,
         val size: Int? = null,
-        val httpOnly: Boolean,
-        val secure: Boolean,
+        val httpOnly: Boolean? = null,
+        val secure: Boolean? = null,
         val session: Boolean? = null,
-        val sameSite: String,
+        val sameSite: String? = null,
     )
 
     @Serializable
@@ -190,26 +190,29 @@ object CFClearance {
 
         return with(json) {
             mutex.withLock {
-                client.value.newCall(
-                    POST(
-                        url = serverConfig.flareSolverrUrl.value.removeSuffix("/") + "/v1",
-                        body =
-                            Json.encodeToString(
-                                FlareSolverRequest(
-                                    "request.get",
-                                    originalRequest.url.toString(),
-                                    session = serverConfig.flareSolverrSessionName.value,
-                                    sessionTtlMinutes = serverConfig.flareSolverrSessionTtl.value,
-                                    cookies =
-                                        network.cookieStore.get(originalRequest.url).map {
-                                            FlareSolverCookie(it.name, it.value)
-                                        },
-                                    returnOnlyCookies = onlyCookies,
-                                    maxTimeout = timeout.inWholeMilliseconds.toInt(),
-                                ),
-                            ).toRequestBody(jsonMediaType),
-                    ),
-                ).awaitSuccess().parseAs<FlareSolverResponse>()
+                client.value
+                    .newCall(
+                        POST(
+                            url = serverConfig.flareSolverrUrl.value.removeSuffix("/") + "/v1",
+                            body =
+                                Json
+                                    .encodeToString(
+                                        FlareSolverRequest(
+                                            "request.get",
+                                            originalRequest.url.toString(),
+                                            session = serverConfig.flareSolverrSessionName.value,
+                                            sessionTtlMinutes = serverConfig.flareSolverrSessionTtl.value,
+                                            cookies =
+                                                network.cookieStore.get(originalRequest.url).map {
+                                                    FlareSolverCookie(it.name, it.value)
+                                                },
+                                            returnOnlyCookies = onlyCookies,
+                                            maxTimeout = timeout.inWholeMilliseconds.toInt(),
+                                        ),
+                                    ).toRequestBody(jsonMediaType),
+                        ),
+                    ).awaitSuccess()
+                    .parseAs<FlareSolverResponse>()
             }
         }
     }
@@ -224,22 +227,23 @@ object CFClearance {
             val cookies =
                 flareSolverResponse.solution.cookies
                     .map { cookie ->
-                        Cookie.Builder()
+                        Cookie
+                            .Builder()
                             .name(cookie.name)
                             .value(cookie.value)
                             .domain(cookie.domain.removePrefix("."))
-                            .path(cookie.path)
-                            .expiresAt(cookie.expires?.takeUnless { it < 0.0 }?.toLong() ?: Long.MAX_VALUE)
                             .also {
-                                if (cookie.httpOnly) it.httpOnly()
-                                if (cookie.secure) it.secure()
-                            }
-                            .build()
-                    }
-                    .groupBy { it.domain }
+                                if (cookie.httpOnly != null && cookie.httpOnly) it.httpOnly()
+                                if (cookie.secure != null && cookie.secure) it.secure()
+                                if (!cookie.path.isNullOrEmpty()) it.path(cookie.path)
+                                // We need to convert the expires time to milliseconds for the persistent cookie store
+                                if (cookie.expires != null && cookie.expires > 0) it.expiresAt((cookie.expires * 1000).toLong())
+                            }.build()
+                    }.groupBy { it.domain }
                     .flatMap { (domain, cookies) ->
                         network.cookieStore.addAll(
-                            HttpUrl.Builder()
+                            HttpUrl
+                                .Builder()
                                 .scheme("http")
                                 .host(domain.removePrefix("."))
                                 .build(),
@@ -254,7 +258,8 @@ object CFClearance {
                     "${it.name}=${it.value}"
                 }
             logger.trace { "Final cookies\n$finalCookies" }
-            return originalRequest.newBuilder()
+            return originalRequest
+                .newBuilder()
                 .header("Cookie", finalCookies)
                 .header("User-Agent", flareSolverResponse.solution.userAgent)
                 .build()

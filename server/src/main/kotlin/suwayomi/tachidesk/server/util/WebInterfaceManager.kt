@@ -13,8 +13,10 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -88,9 +90,7 @@ enum class WebUIChannel {
     companion object {
         fun from(channel: String): WebUIChannel = entries.find { it.name.lowercase() == channel.lowercase() } ?: STABLE
 
-        fun doesConfigChannelEqual(channel: WebUIChannel): Boolean {
-            return serverConfig.webUIChannel.value.equals(channel.name, true)
-        }
+        fun doesConfigChannelEqual(channel: WebUIChannel): Boolean = serverConfig.webUIChannel.value.equals(channel.name, true)
     }
 }
 
@@ -200,8 +200,8 @@ object WebInterfaceManager {
         version: String = "",
         state: UpdateState = IDLE,
         progress: Int = 0,
-    ): WebUIUpdateStatus {
-        return WebUIUpdateStatus(
+    ): WebUIUpdateStatus =
+        WebUIUpdateStatus(
             info =
                 WebUIUpdateInfo(
                     channel = serverConfig.webUIChannel.value,
@@ -210,7 +210,6 @@ object WebInterfaceManager {
             state,
             progress,
         )
-    }
 
     fun resetStatus() {
         emitStatus("", IDLE, 0, immediate = true)
@@ -226,14 +225,12 @@ object WebInterfaceManager {
         preferences.edit().putString(SERVED_WEBUI_FLAVOR_KEY, flavor.uiName).apply()
     }
 
-    private fun getServedWebUIFlavor(): WebUIFlavor {
-        return WebUIFlavor.from(preferences.getString(SERVED_WEBUI_FLAVOR_KEY, WebUIFlavor.default.uiName)!!)
-    }
+    private fun getServedWebUIFlavor(): WebUIFlavor =
+        WebUIFlavor.from(preferences.getString(SERVED_WEBUI_FLAVOR_KEY, WebUIFlavor.default.uiName)!!)
 
-    private fun isAutoUpdateEnabled(): Boolean {
-        return serverConfig.webUIUpdateCheckInterval.value.toInt() != 0
-    }
+    private fun isAutoUpdateEnabled(): Boolean = serverConfig.webUIUpdateCheckInterval.value.toInt() != 0
 
+    @OptIn(DelicateCoroutinesApi::class)
     private fun scheduleWebUIUpdateCheck() {
         HAScheduler.descheduleCron(currentUpdateTaskId)
 
@@ -242,31 +239,42 @@ object WebInterfaceManager {
             return
         }
 
-        val updateInterval = serverConfig.webUIUpdateCheckInterval.value.hours.coerceAtLeast(1.hours).coerceAtMost(23.hours)
+        val updateInterval =
+            serverConfig.webUIUpdateCheckInterval.value.hours
+                .coerceAtLeast(1.hours)
+                .coerceAtMost(23.hours)
         val lastAutomatedUpdate = preferences.getLong(LAST_WEBUI_UPDATE_CHECK_KEY, System.currentTimeMillis())
 
         val task = {
-            logger.debug {
-                "Checking for webUI update (" +
-                    "flavor= ${WebUIFlavor.current.uiName}, " +
-                    "channel= ${serverConfig.webUIChannel.value}, " +
-                    "interval= ${serverConfig.webUIUpdateCheckInterval.value}h, " +
-                    "lastAutomatedUpdate= ${
-                        Date(
-                            lastAutomatedUpdate,
-                        )
-                    })"
-            }
+            val log =
+                KotlinLogging.logger(
+                    "${logger.name}::scheduleWebUIUpdateCheck(" +
+                        "flavor= ${WebUIFlavor.current.uiName}, " +
+                        "channel= ${serverConfig.webUIChannel.value}, " +
+                        "interval= ${serverConfig.webUIUpdateCheckInterval.value}h, " +
+                        "lastAutomatedUpdate= ${
+                            Date(
+                                lastAutomatedUpdate,
+                            )
+                        })",
+                )
+            log.debug { "called" }
 
             runBlocking {
-                checkForUpdate(WebUIFlavor.current)
+                try {
+                    checkForUpdate(WebUIFlavor.current)
+                } catch (e: Exception) {
+                    log.error(e) { "failed due to" }
+                }
             }
         }
 
         val wasPreviousUpdateCheckTriggered =
             (System.currentTimeMillis() - lastAutomatedUpdate) < updateInterval.inWholeMilliseconds
         if (!wasPreviousUpdateCheckTriggered) {
-            task()
+            GlobalScope.launch(Dispatchers.IO) {
+                task()
+            }
         }
 
         currentUpdateTaskId =
@@ -365,7 +373,8 @@ object WebInterfaceManager {
                 true
             } catch (e: Exception) {
                 false
-            } || isLocalWebUIValid
+            } ||
+                isLocalWebUIValid
         }
 
         // download the latest compatible version for the current selected webUI
@@ -455,13 +464,12 @@ object WebInterfaceManager {
         return "$downloadSpecificVersionBaseUrl/$version"
     }
 
-    private fun getLocalVersion(path: String = applicationDirs.webUIRoot): String {
-        return try {
+    private fun getLocalVersion(path: String = applicationDirs.webUIRoot): String =
+        try {
             File("$path/revision").readText().trim()
         } catch (e: Exception) {
             "r-1"
         }
-    }
 
     private fun doesLocalWebUIExist(path: String): Boolean {
         // check if we have webUI installed and is correct version
@@ -534,39 +542,51 @@ object WebInterfaceManager {
     private suspend fun fetchMD5SumFor(
         flavor: WebUIFlavor,
         version: String,
-    ): String {
-        return try {
+    ): String =
+        try {
             executeWithRetry(KotlinLogging.logger("${logger.name} fetchMD5SumFor(flavor= ${flavor.uiName}, version= $version)"), {
-                network.client.newCall(GET("${getDownloadUrlFor(flavor, version)}/md5sum")).awaitSuccess().body.string().trim()
+                network.client
+                    .newCall(GET("${getDownloadUrlFor(flavor, version)}/md5sum"))
+                    .awaitSuccess()
+                    .body
+                    .string()
+                    .trim()
             })
         } catch (e: Exception) {
             ""
         }
-    }
 
     private fun extractVersion(versionString: String): Int {
         // version string is of format "r<number>"
         return versionString.substring(1).toInt()
     }
 
-    private suspend fun fetchPreviewVersion(flavor: WebUIFlavor): String {
-        return executeWithRetry(KotlinLogging.logger("${logger.name} fetchPreviewVersion(${flavor.uiName})"), {
-            val releaseInfoJson = network.client.newCall(GET(flavor.latestReleaseInfoUrl)).awaitSuccess().body.string()
+    private suspend fun fetchPreviewVersion(flavor: WebUIFlavor): String =
+        executeWithRetry(KotlinLogging.logger("${logger.name} fetchPreviewVersion(${flavor.uiName})"), {
+            val releaseInfoJson =
+                network.client
+                    .newCall(GET(flavor.latestReleaseInfoUrl))
+                    .awaitSuccess()
+                    .body
+                    .string()
             Json.decodeFromString<JsonObject>(releaseInfoJson)["tag_name"]?.jsonPrimitive?.content
                 ?: throw Exception("Failed to get the preview version tag")
         })
-    }
 
-    private suspend fun fetchServerMappingFile(flavor: WebUIFlavor): JsonArray {
-        return executeWithRetry(
+    private suspend fun fetchServerMappingFile(flavor: WebUIFlavor): JsonArray =
+        executeWithRetry(
             KotlinLogging.logger("$logger fetchServerMappingFile(${flavor.uiName})"),
             {
-                json.parseToJsonElement(
-                    network.client.newCall(GET(flavor.versionMappingUrl)).awaitSuccess().body.string(),
-                ).jsonArray
+                json
+                    .parseToJsonElement(
+                        network.client
+                            .newCall(GET(flavor.versionMappingUrl))
+                            .awaitSuccess()
+                            .body
+                            .string(),
+                    ).jsonArray
             },
         )
-    }
 
     private suspend fun getLatestCompatibleVersion(flavor: WebUIFlavor): String {
         if (WebUIChannel.doesConfigChannelEqual(WebUIChannel.BUNDLED)) {
@@ -592,7 +612,8 @@ object WebInterfaceManager {
                     ?: throw Exception("Invalid mappingFile")
             val minServerVersionString =
                 webUIToServerVersionEntry["serverVersion"]
-                    ?.jsonPrimitive?.content
+                    ?.jsonPrimitive
+                    ?.content
                     ?: throw Exception("Invalid mappingFile")
             val minServerVersionNumber = extractVersion(minServerVersionString)
 
@@ -766,8 +787,8 @@ object WebInterfaceManager {
         flavor: WebUIFlavor,
         currentVersion: String = getLocalVersion(),
         raiseError: Boolean = false,
-    ): Pair<String, Boolean> {
-        return try {
+    ): Pair<String, Boolean> =
+        try {
             val isServedWebUIForCurrentFlavor = flavor.uiName == getServedWebUIFlavor().uiName
             val latestCompatibleVersion = getLatestCompatibleVersion(flavor)
             val isVersionUpdateAvailable = latestCompatibleVersion != currentVersion
@@ -783,5 +804,4 @@ object WebInterfaceManager {
 
             Pair("", false)
         }
-    }
 }

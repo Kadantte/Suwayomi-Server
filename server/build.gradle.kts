@@ -3,12 +3,28 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import java.time.Instant
 
 plugins {
-    id(libs.plugins.kotlin.jvm.get().pluginId)
-    id(libs.plugins.kotlin.serialization.get().pluginId)
-    id(libs.plugins.ktlint.get().pluginId)
+    id(
+        libs.plugins.kotlin.jvm
+            .get()
+            .pluginId,
+    )
+    id(
+        libs.plugins.kotlin.serialization
+            .get()
+            .pluginId,
+    )
+    id(
+        libs.plugins.ktlint
+            .get()
+            .pluginId,
+    )
     application
     alias(libs.plugins.shadowjar)
-    id(libs.plugins.buildconfig.get().pluginId)
+    id(
+        libs.plugins.buildconfig
+            .get()
+            .pluginId,
+    )
 }
 
 dependencies {
@@ -141,11 +157,10 @@ tasks {
     }
 
     withType<KotlinJvmCompile> {
-        kotlinOptions {
-            freeCompilerArgs +=
-                listOf(
-                    "-opt-in=kotlinx.serialization.ExperimentalSerializationApi",
-                )
+        compilerOptions {
+            freeCompilerArgs.add(
+                "-opt-in=kotlinx.serialization.ExperimentalSerializationApi",
+            )
         }
     }
 

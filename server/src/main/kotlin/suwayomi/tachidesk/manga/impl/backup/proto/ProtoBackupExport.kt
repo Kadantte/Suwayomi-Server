@@ -10,11 +10,16 @@ package suwayomi.tachidesk.manga.impl.backup.proto
 import android.app.Application
 import android.content.Context
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import okio.Buffer
+import okio.Sink
 import okio.buffer
 import okio.gzip
-import okio.sink
 import org.jetbrains.exposed.sql.Query
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.select
@@ -29,7 +34,6 @@ import suwayomi.tachidesk.manga.impl.backup.proto.models.Backup
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupCategory
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupChapter
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupManga
-import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupSerializer
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupSource
 import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupTracking
 import suwayomi.tachidesk.manga.impl.track.Track
@@ -44,7 +48,6 @@ import suwayomi.tachidesk.server.serverConfig
 import suwayomi.tachidesk.util.HAScheduler
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
@@ -70,6 +73,7 @@ object ProtoBackupExport : ProtoBackupBase() {
         )
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     fun scheduleAutomatedBackupTask() {
         HAScheduler.descheduleCron(backupSchedulerJobId)
 
@@ -79,22 +83,33 @@ object ProtoBackupExport : ProtoBackupBase() {
         }
 
         val task = {
-            cleanupAutomatedBackups()
-            createAutomatedBackup()
-            preferences.edit().putLong(LAST_AUTOMATED_BACKUP_KEY, System.currentTimeMillis()).apply()
+            try {
+                cleanupAutomatedBackups()
+                createAutomatedBackup()
+                preferences.edit().putLong(LAST_AUTOMATED_BACKUP_KEY, System.currentTimeMillis()).apply()
+            } catch (e: Exception) {
+                logger.error(e) { "scheduleAutomatedBackupTask: failed due to" }
+            }
         }
 
-        val (hour, minute) = serverConfig.backupTime.value.split(":").map { it.toInt() }
+        val (hour, minute) =
+            serverConfig.backupTime.value
+                .split(":")
+                .map { it.toInt() }
         val backupHour = hour.coerceAtLeast(0).coerceAtMost(23)
         val backupMinute = minute.coerceAtLeast(0).coerceAtMost(59)
-        val backupInterval = serverConfig.backupInterval.value.days.coerceAtLeast(1.days)
+        val backupInterval =
+            serverConfig.backupInterval.value.days
+                .coerceAtLeast(1.days)
 
         // trigger last backup in case the server wasn't running on the scheduled time
         val lastAutomatedBackup = preferences.getLong(LAST_AUTOMATED_BACKUP_KEY, 0)
         val wasPreviousBackupTriggered =
             (System.currentTimeMillis() - lastAutomatedBackup) < backupInterval.inWholeMilliseconds
         if (!wasPreviousBackupTriggered) {
-            task()
+            GlobalScope.launch(Dispatchers.IO) {
+                task()
+            }
         }
 
         HAScheduler.scheduleCron(task, "$backupMinute $backupHour */${backupInterval.inWholeDays} * *", "backup")
@@ -150,7 +165,10 @@ object ProtoBackupExport : ProtoBackupBase() {
 
         val lastAccessTime = file.lastModified()
         val isTTLReached =
-            System.currentTimeMillis() - lastAccessTime >= serverConfig.backupTTL.value.days.coerceAtLeast(1.days).inWholeMilliseconds
+            System.currentTimeMillis() - lastAccessTime >=
+                serverConfig.backupTTL.value.days
+                    .coerceAtLeast(1.days)
+                    .inWholeMilliseconds
         if (isTTLReached) {
             file.delete()
         }
@@ -166,24 +184,26 @@ object ProtoBackupExport : ProtoBackupBase() {
                 Backup(
                     backupManga(databaseManga, flags),
                     backupCategories(),
-                    emptyList(),
                     backupExtensionInfo(databaseManga),
                 )
             }
 
-        val byteArray = parser.encodeToByteArray(BackupSerializer, backup)
+        val byteArray = parser.encodeToByteArray(Backup.serializer(), backup)
 
-        val byteStream = ByteArrayOutputStream()
-        byteStream.sink().gzip().buffer().use { it.write(byteArray) }
+        val byteStream = Buffer()
+        (byteStream as Sink)
+            .gzip()
+            .buffer()
+            .use { it.write(byteArray) }
 
-        return byteStream.toByteArray().inputStream()
+        return byteStream.inputStream()
     }
 
     private fun backupManga(
         databaseManga: Query,
         flags: BackupFlags,
-    ): List<BackupManga> {
-        return databaseManga.map { mangaRow ->
+    ): List<BackupManga> =
+        databaseManga.map { mangaRow ->
             val backupManga =
                 BackupManga(
                     source = mangaRow[MangaTable.sourceReference],
@@ -205,7 +225,8 @@ object ProtoBackupExport : ProtoBackupBase() {
             if (flags.includeChapters) {
                 val chapters =
                     transaction {
-                        ChapterTable.select { ChapterTable.manga eq mangaId }
+                        ChapterTable
+                            .select { ChapterTable.manga eq mangaId }
                             .orderBy(ChapterTable.sourceOrder to SortOrder.DESC)
                             .map {
                                 ChapterTable.toDataClass(it)
@@ -266,22 +287,23 @@ object ProtoBackupExport : ProtoBackupBase() {
 
             backupManga
         }
-    }
 
-    private fun backupCategories(): List<BackupCategory> {
-        return CategoryTable.selectAll().orderBy(CategoryTable.order to SortOrder.ASC).map {
-            CategoryTable.toDataClass(it)
-        }.map {
-            BackupCategory(
-                it.name,
-                it.order,
-                0, // not supported in Tachidesk
-            )
-        }
-    }
+    private fun backupCategories(): List<BackupCategory> =
+        CategoryTable
+            .selectAll()
+            .orderBy(CategoryTable.order to SortOrder.ASC)
+            .map {
+                CategoryTable.toDataClass(it)
+            }.map {
+                BackupCategory(
+                    it.name,
+                    it.order,
+                    0, // not supported in Tachidesk
+                )
+            }
 
-    private fun backupExtensionInfo(mangas: Query): List<BackupSource> {
-        return mangas
+    private fun backupExtensionInfo(mangas: Query): List<BackupSource> =
+        mangas
             .asSequence()
             .map { it[MangaTable.sourceReference] }
             .distinct()
@@ -291,7 +313,5 @@ object ProtoBackupExport : ProtoBackupBase() {
                     sourceRow?.get(SourceTable.name) ?: "",
                     it,
                 )
-            }
-            .toList()
-    }
+            }.toList()
 }

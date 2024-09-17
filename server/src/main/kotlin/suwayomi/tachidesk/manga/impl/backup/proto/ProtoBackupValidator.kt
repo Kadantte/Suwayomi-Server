@@ -14,7 +14,6 @@ import okio.source
 import org.jetbrains.exposed.sql.select
 import org.jetbrains.exposed.sql.transactions.transaction
 import suwayomi.tachidesk.manga.impl.backup.proto.models.Backup
-import suwayomi.tachidesk.manga.impl.backup.proto.models.BackupSerializer
 import suwayomi.tachidesk.manga.impl.track.tracker.TrackerManager
 import suwayomi.tachidesk.manga.model.table.SourceTable
 import java.io.InputStream
@@ -64,8 +63,13 @@ object ProtoBackupValidator {
     }
 
     fun validate(sourceStream: InputStream): ValidationResult {
-        val backupString = sourceStream.source().gzip().buffer().use { it.readByteArray() }
-        val backup = ProtoBackupImport.parser.decodeFromByteArray(BackupSerializer, backupString)
+        val backupString =
+            sourceStream
+                .source()
+                .gzip()
+                .buffer()
+                .use { it.readByteArray() }
+        val backup = ProtoBackupImport.parser.decodeFromByteArray(Backup.serializer(), backupString)
 
         return validate(backup)
     }

@@ -22,8 +22,8 @@ object MangaTable : IntIdTable() {
     val title = varchar("title", 512)
     val initialized = bool("initialized").default(false)
 
-    val artist = varchar("artist", 512).nullable()
-    val author = varchar("author", 512).nullable()
+    val artist = varchar("artist", Integer.MAX_VALUE).nullable()
+    val author = varchar("author", Integer.MAX_VALUE).nullable()
     val description = varchar("description", Integer.MAX_VALUE).nullable()
     val genre = varchar("genre", Integer.MAX_VALUE).nullable()
 
@@ -69,7 +69,9 @@ fun MangaTable.toDataClass(mangaEntry: ResultRow) =
         updateStrategy = UpdateStrategy.valueOf(mangaEntry[updateStrategy]),
     )
 
-enum class MangaStatus(val value: Int) {
+enum class MangaStatus(
+    val value: Int,
+) {
     UNKNOWN(0),
     ONGOING(1),
     COMPLETED(2),

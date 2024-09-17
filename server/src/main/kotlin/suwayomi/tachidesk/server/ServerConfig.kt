@@ -31,11 +31,16 @@ val mutableConfigValueScope = CoroutineScope(SupervisorJob() + Dispatchers.Defau
 
 const val SERVER_CONFIG_MODULE_NAME = "server"
 
-class ServerConfig(getConfig: () -> Config, val moduleName: String = SERVER_CONFIG_MODULE_NAME) : SystemPropertyOverridableConfigModule(
-    getConfig,
-    moduleName,
-) {
-    open inner class OverrideConfigValue<T>(private val configAdapter: ConfigAdapter<out Any>) {
+class ServerConfig(
+    getConfig: () -> Config,
+    val moduleName: String = SERVER_CONFIG_MODULE_NAME,
+) : SystemPropertyOverridableConfigModule(
+        getConfig,
+        moduleName,
+    ) {
+    open inner class OverrideConfigValue<T>(
+        private val configAdapter: ConfigAdapter<out Any>,
+    ) {
         private var flow: MutableStateFlow<T>? = null
 
         open fun getValueFromConfig(
@@ -57,7 +62,10 @@ class ServerConfig(getConfig: () -> Config, val moduleName: String = SERVER_CONF
             val stateFlow = MutableStateFlow(value)
             flow = stateFlow
 
-            stateFlow.drop(1).distinctUntilChanged().filter { it != getValueFromConfig(thisRef, property) }
+            stateFlow
+                .drop(1)
+                .distinctUntilChanged()
+                .filter { it != getValueFromConfig(thisRef, property) }
                 .onEach { GlobalConfigManager.updateValue("$moduleName.${property.name}", it as Any) }
                 .launchIn(mutableConfigValueScope)
 
@@ -65,14 +73,16 @@ class ServerConfig(getConfig: () -> Config, val moduleName: String = SERVER_CONF
         }
     }
 
-    inner class OverrideConfigValues<T>(private val configAdapter: ConfigAdapter<out Any>) : OverrideConfigValue<T>(configAdapter) {
+    inner class OverrideConfigValues<T>(
+        private val configAdapter: ConfigAdapter<out Any>,
+    ) : OverrideConfigValue<T>(configAdapter) {
         override fun getValueFromConfig(
             thisRef: ServerConfig,
             property: KProperty<*>,
-        ): Any {
-            return overridableConfig.getValue<ServerConfig, List<String>>(thisRef, property)
+        ): Any =
+            overridableConfig
+                .getValue<ServerConfig, List<String>>(thisRef, property)
                 .map { configAdapter.toType(it) }
-        }
     }
 
     val ip: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
@@ -125,6 +135,9 @@ class ServerConfig(getConfig: () -> Config, val moduleName: String = SERVER_CONF
     val debugLogsEnabled: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
     val gqlDebugLogsEnabled: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
     val systemTrayEnabled: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+    val maxLogFiles: MutableStateFlow<Int> by OverrideConfigValue(IntConfigAdapter)
+    val maxLogFileSize: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
+    val maxLogFolderSize: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
 
     // backup
     val backupPath: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)

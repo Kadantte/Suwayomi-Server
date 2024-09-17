@@ -5,8 +5,10 @@ import android.content.Context
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.BufferOverflow
@@ -103,27 +105,30 @@ class Updater : IUpdater {
         )
     }
 
-    override fun getLastUpdateTimestamp(): Long {
-        return preferences.getLong(lastUpdateKey, 0)
-    }
+    override fun getLastUpdateTimestamp(): Long = preferences.getLong(lastUpdateKey, 0)
 
     private fun autoUpdateTask() {
-        val lastAutomatedUpdate = preferences.getLong(lastAutomatedUpdateKey, 0)
-        preferences.edit().putLong(lastAutomatedUpdateKey, System.currentTimeMillis()).apply()
+        try {
+            val lastAutomatedUpdate = preferences.getLong(lastAutomatedUpdateKey, 0)
+            preferences.edit().putLong(lastAutomatedUpdateKey, System.currentTimeMillis()).apply()
 
-        if (getStatus().running) {
-            logger.debug { "Global update is already in progress" }
-            return
-        }
+            if (getStatus().running) {
+                logger.debug { "Global update is already in progress" }
+                return
+            }
 
-        logger.info {
-            "Trigger global update (interval= ${serverConfig.globalUpdateInterval.value}h, lastAutomatedUpdate= ${Date(
-                lastAutomatedUpdate,
-            )})"
+            logger.info {
+                "Trigger global update (interval= ${serverConfig.globalUpdateInterval.value}h, lastAutomatedUpdate= ${Date(
+                    lastAutomatedUpdate,
+                )})"
+            }
+            addCategoriesToUpdateQueue(Category.getCategoryList(), clear = true, forceAll = false)
+        } catch (e: Exception) {
+            logger.error(e) { "autoUpdateTask: failed due to" }
         }
-        addCategoriesToUpdateQueue(Category.getCategoryList(), clear = true, forceAll = false)
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     fun scheduleUpdateTask() {
         HAScheduler.deschedule(currentUpdateTaskId)
 
@@ -132,7 +137,10 @@ class Updater : IUpdater {
             return
         }
 
-        val updateInterval = serverConfig.globalUpdateInterval.value.hours.coerceAtLeast(6.hours).inWholeMilliseconds
+        val updateInterval =
+            serverConfig.globalUpdateInterval.value.hours
+                .coerceAtLeast(6.hours)
+                .inWholeMilliseconds
         val lastAutomatedUpdate = preferences.getLong(lastAutomatedUpdateKey, 0)
         val timeToNextExecution = (updateInterval - (System.currentTimeMillis() - lastAutomatedUpdate)).mod(updateInterval)
 
@@ -141,7 +149,9 @@ class Updater : IUpdater {
                 if (lastAutomatedUpdate > 0) lastAutomatedUpdate else System.currentTimeMillis()
             ) < updateInterval
         if (!wasPreviousUpdateTriggered) {
-            autoUpdateTask()
+            GlobalScope.launch {
+                autoUpdateTask()
+            }
         }
 
         HAScheduler.schedule(::autoUpdateTask, updateInterval, timeToNextExecution, "global-update")
@@ -176,26 +186,24 @@ class Updater : IUpdater {
         notifyFlow.emit(Unit)
     }
 
-    private fun getOrCreateUpdateChannelFor(source: String): Channel<UpdateJob> {
-        return updateChannels.getOrPut(source) {
+    private fun getOrCreateUpdateChannelFor(source: String): Channel<UpdateJob> =
+        updateChannels.getOrPut(source) {
             logger.debug { "getOrCreateUpdateChannelFor: created channel for $source - channels: ${updateChannels.size + 1}" }
             createUpdateChannel(source)
         }
-    }
 
     private fun createUpdateChannel(source: String): Channel<UpdateJob> {
         val channel = Channel<UpdateJob>(Channel.UNLIMITED)
-        channel.consumeAsFlow()
+        channel
+            .consumeAsFlow()
             .onEach { job ->
                 semaphore.withPermit {
                     process(job)
                 }
-            }
-            .catch {
+            }.catch {
                 logger.error(it) { "Error during updates (source: $source)" }
                 handleChannelUpdateFailure(source)
-            }
-            .onCompletion { updateChannels.remove(source) }
+            }.onCompletion { updateChannels.remove(source) }
             .launchIn(scope)
         return channel
     }
@@ -225,7 +233,7 @@ class Updater : IUpdater {
         tracker[job.manga.id] =
             try {
                 logger.info { "Updating ${job.manga}" }
-                if (serverConfig.updateMangas.value) {
+                if (serverConfig.updateMangas.value || !job.manga.initialized) {
                     Manga.getManga(job.manga.id, true)
                 }
                 Chapter.getChapterList(job.manga.id, true)
@@ -292,22 +300,19 @@ class Updater : IUpdater {
                     } else {
                         true
                     }
-                }
-                .filter {
+                }.filter {
                     if (it.initialized && serverConfig.excludeNotStarted.value) {
                         it.lastReadAt != null
                     } else {
                         true
                     }
-                }
-                .filter {
+                }.filter {
                     if (serverConfig.excludeCompleted.value) {
                         it.status != MangaStatus.COMPLETED.name
                     } else {
                         true
                     }
-                }
-                .filter { forceAll || !excludedCategories.any { category -> mangasToCategoriesMap[it.id]?.contains(category) == true } }
+                }.filter { forceAll || !excludedCategories.any { category -> mangasToCategoriesMap[it.id]?.contains(category) == true } }
                 .toList()
         val skippedMangas = categoriesToUpdateMangas.subtract(mangasToUpdate.toSet()).toList()
 
@@ -329,11 +334,11 @@ class Updater : IUpdater {
         )
     }
 
-    private fun addMangasToQueue(mangasToUpdate: List<MangaDataClass>) {
+    override fun addMangasToQueue(mangas: List<MangaDataClass>) {
         // create all manga update jobs before adding them to the queue so that the client is able to calculate the
         // progress properly right form the start
-        mangasToUpdate.forEach { tracker[it.id] = UpdateJob(it) }
-        mangasToUpdate.forEach { addMangaToQueue(it) }
+        mangas.forEach { tracker[it.id] = UpdateJob(it) }
+        mangas.forEach { addMangaToQueue(it) }
     }
 
     private fun addMangaToQueue(manga: MangaDataClass) {
