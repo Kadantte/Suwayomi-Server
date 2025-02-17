@@ -10,11 +10,14 @@ package suwayomi.tachidesk.server.database.migration
 import de.neonew.exposed.migrations.helpers.SQLMigration
 
 @Suppress("ClassName", "unused")
-class M0041_FixDownloadedChaptersWithoutPageCount : SQLMigration() {
+class M0043_PreventNegativeLastPageRead : SQLMigration() {
     override val sql: String =
         """
         UPDATE CHAPTER
-        SET IS_DOWNLOADED = FALSE
-        WHERE IS_DOWNLOADED = TRUE AND PAGE_COUNT <= 0
+        SET LAST_PAGE_READ = 0
+        WHERE LAST_PAGE_READ < 0;
+
+        ALTER TABLE CHAPTER
+            ADD CONSTRAINT CHK_LAST_READ_PAGE_POSITIVE CHECK (LAST_PAGE_READ >= 0)
         """.trimIndent()
 }

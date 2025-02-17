@@ -52,13 +52,15 @@ main() {
       ;;
     linux-x64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.5+11"
+      JRE_RELEASE="jdk-21.0.6+7"
       JRE="OpenJDK21U-jre_x64_linux_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').tar.gz"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
       ELECTRON="electron-$electron_version-linux-x64.zip"
       ELECTRON_URL="https://github.com/electron/electron/releases/download/$electron_version/$ELECTRON"
-      download_jre_and_electron
+      download_electron
+      setup_jre
+      tree "$RELEASE_NAME"
 
       RELEASE="$RELEASE_NAME.tar.gz"
       make_linux_bundle
@@ -66,13 +68,15 @@ main() {
       ;;
     macOS-x64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.5+11"
+      JRE_RELEASE="jdk-21.0.6+7"
       JRE="OpenJDK21U-jre_x64_mac_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').tar.gz"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
       ELECTRON="electron-$electron_version-darwin-x64.zip"
       ELECTRON_URL="https://github.com/electron/electron/releases/download/$electron_version/$ELECTRON"
-      download_jre_and_electron
+      download_electron
+      setup_jre
+      tree "$RELEASE_NAME"
 
       RELEASE="$RELEASE_NAME.zip"
       make_macos_bundle
@@ -80,13 +84,15 @@ main() {
       ;;
     macOS-arm64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.5+11"
+      JRE_RELEASE="jdk-21.0.6+7"
       JRE="OpenJDK21U-jre_aarch64_mac_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').tar.gz"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
       ELECTRON="electron-$electron_version-darwin-arm64.zip"
       ELECTRON_URL="https://github.com/electron/electron/releases/download/$electron_version/$ELECTRON"
-      download_jre_and_electron
+      download_electron
+      setup_jre
+      tree "$RELEASE_NAME"
 
       RELEASE="$RELEASE_NAME.zip"
       make_macos_bundle
@@ -94,13 +100,15 @@ main() {
       ;;
     windows-x64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.5+11"
+      JRE_RELEASE="jdk-21.0.6+7"
       JRE="OpenJDK21U-jre_x64_windows_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').zip"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
       ELECTRON="electron-$electron_version-win32-x64.zip"
       ELECTRON_URL="https://github.com/electron/electron/releases/download/$electron_version/$ELECTRON"
-      download_jre_and_electron
+      download_electron
+      setup_jre
+      tree "$RELEASE_NAME"
 
       RELEASE="$RELEASE_NAME.zip"
       make_windows_bundle
@@ -130,26 +138,30 @@ download_launcher() {
   mv "Suwayomi-Launcher.jar" "$RELEASE_NAME/Suwayomi-Launcher.jar"
 }
 
-download_jre_and_electron() {
-  if [ ! -f "$JRE" ]; then
-    curl -L "$JRE_URL" -o "$JRE"
-  fi
+download_electron() {
   if [ ! -f "$ELECTRON" ]; then
     curl -L "$ELECTRON_URL" -o "$ELECTRON"
   fi
 
-  local ext="${JRE##*.}"
-  if [ "$ext" = "zip" ]; then
-    unzip "$JRE"
-  else
-    tar xvf "$JRE"
-  fi
-  mv "$JRE_DIR" "$RELEASE_NAME/jre"
   unzip "$ELECTRON" -d "$RELEASE_NAME/electron/"
+}
 
-  mkdir "$RELEASE_NAME/bin"
+setup_jre() {
+  if [ -d "jre" ]; then
+    mv "jre" "$RELEASE_NAME/jre"
+  else
+    if [ ! -f "$JRE" ]; then
+        curl -L "$JRE_URL" -o "$JRE"
+      fi
 
-  tree
+      local ext="${JRE##*.}"
+      if [ "$ext" = "zip" ]; then
+        unzip "$JRE"
+      else
+        tar xvf "$JRE"
+      fi
+      mv "$JRE_DIR" "$RELEASE_NAME/jre"
+  fi
 }
 
 copy_linux_package_assets_to() {
@@ -166,6 +178,7 @@ copy_linux_package_assets_to() {
 }
 
 make_linux_bundle() {
+  mkdir "$RELEASE_NAME/bin"
   cp "$JAR" "$RELEASE_NAME/bin/Suwayomi-Server.jar"
   cp "scripts/resources/suwayomi-launcher.sh" "$RELEASE_NAME/"
   cp "scripts/resources/suwayomi-server.sh" "$RELEASE_NAME/"
@@ -174,6 +187,7 @@ make_linux_bundle() {
 }
 
 make_macos_bundle() {
+  mkdir "$RELEASE_NAME/bin"
   cp "$JAR" "$RELEASE_NAME/bin/Suwayomi-Server.jar"
   cp "scripts/resources/Suwayomi Launcher.command" "$RELEASE_NAME/"
 
@@ -237,6 +251,7 @@ make_windows_bundle() {
   #WINEARCH=win32 wine "$rcedit" "$RELEASE_NAME/electron/electron.exe" \
   #    --set-icon "$icon"
 
+  mkdir "$RELEASE_NAME/bin"
   cp "$JAR" "$RELEASE_NAME/bin/Suwayomi-Server.jar"
   cp "scripts/resources/Suwayomi Launcher.bat" "$RELEASE_NAME"
 

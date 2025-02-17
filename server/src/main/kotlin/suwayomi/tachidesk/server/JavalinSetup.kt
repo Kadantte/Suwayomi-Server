@@ -10,6 +10,7 @@ package suwayomi.tachidesk.server
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.javalin.Javalin
 import io.javalin.apibuilder.ApiBuilder.path
+import io.javalin.http.HandlerType
 import io.javalin.http.UnauthorizedResponse
 import io.javalin.http.staticfiles.Location
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,7 @@ import org.eclipse.jetty.server.ServerConnector
 import suwayomi.tachidesk.global.GlobalAPI
 import suwayomi.tachidesk.graphql.GraphQL
 import suwayomi.tachidesk.manga.MangaAPI
+import suwayomi.tachidesk.opds.OpdsAPI
 import suwayomi.tachidesk.server.util.Browser
 import suwayomi.tachidesk.server.util.WebInterfaceManager
 import uy.kohesive.injekt.injectLazy
@@ -102,12 +104,19 @@ object JavalinSetup {
                             GlobalAPI.defineEndpoints()
                             MangaAPI.defineEndpoints()
                         }
+
+                        OpdsAPI.defineEndpoints()
                         GraphQL.defineEndpoints()
                     }
                 }
             }
 
         app.beforeMatched { ctx ->
+            val isPreFlight = ctx.method() == HandlerType.OPTIONS
+            if (isPreFlight) {
+                return@beforeMatched
+            }
+
             fun credentialsValid(): Boolean {
                 val basicAuthCredentials = ctx.basicAuthCredentials() ?: return false
                 val (username, password) = basicAuthCredentials
