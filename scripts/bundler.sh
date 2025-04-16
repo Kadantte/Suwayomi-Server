@@ -78,7 +78,7 @@ main() {
       setup_jre
       tree "$RELEASE_NAME"
 
-      RELEASE="$RELEASE_NAME.zip"
+      RELEASE="$RELEASE_NAME.tar.gz"
       make_macos_bundle
       move_release_to_output_dir
       ;;
@@ -94,7 +94,7 @@ main() {
       setup_jre
       tree "$RELEASE_NAME"
 
-      RELEASE="$RELEASE_NAME.zip"
+      RELEASE="$RELEASE_NAME.tar.gz"
       make_macos_bundle
       move_release_to_output_dir
       ;;
@@ -148,6 +148,8 @@ download_electron() {
 
 setup_jre() {
   if [ -d "jre" ]; then
+    chmod +x ./jre/bin/java
+    chmod +x ./jre/lib/jspawnhelper
     mv "jre" "$RELEASE_NAME/jre"
   else
     if [ ! -f "$JRE" ]; then
@@ -191,7 +193,7 @@ make_macos_bundle() {
   cp "$JAR" "$RELEASE_NAME/bin/Suwayomi-Server.jar"
   cp "scripts/resources/Suwayomi Launcher.command" "$RELEASE_NAME/"
 
-  zip -9 -r "$RELEASE" "$RELEASE_NAME/"
+  tar -I "gzip -9" -cvf "$RELEASE" "$RELEASE_NAME/"
 }
 
 # https://wiki.debian.org/SimplePackagingTutorial
