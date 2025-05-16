@@ -48,7 +48,6 @@ object Page {
         progressFlow: ((StateFlow<Int>) -> Unit)? = null,
     ): Pair<InputStream, String> {
         val mangaEntry = transaction { MangaTable.selectAll().where { MangaTable.id eq mangaId }.first() }
-        val source = getCatalogueSourceOrStub(mangaEntry[MangaTable.sourceReference])
         val chapterEntry =
             transaction {
                 ChapterTable
@@ -59,6 +58,14 @@ object Page {
                     }.first()
             }
         val chapterId = chapterEntry[ChapterTable.id].value
+
+        try {
+            if (chapterEntry[ChapterTable.isDownloaded]) {
+                return ChapterDownloadHelper.getImage(mangaId, chapterId, index)
+            }
+        } catch (_: Exception) {
+            // ignore and fetch again
+        }
 
         val pageEntry =
             transaction {
@@ -79,7 +86,7 @@ object Page {
         progressFlow?.invoke(tachiyomiPage.progress)
 
         // we treat Local source differently
-        if (source.id == LocalSource.ID) {
+        if (mangaEntry[MangaTable.sourceReference] == LocalSource.ID) {
             // is of archive format
             if (LocalSource.pageCache.containsKey(chapterEntry[ChapterTable.url])) {
                 val pageStream = LocalSource.pageCache[chapterEntry[ChapterTable.url]]!![index]
@@ -91,6 +98,7 @@ object Page {
             return imageFile.inputStream() to (ImageUtil.findImageType { imageFile.inputStream() }?.mime ?: "image/jpeg")
         }
 
+        val source = getCatalogueSourceOrStub(mangaEntry[MangaTable.sourceReference])
         source as HttpSource
 
         if (pageEntry[PageTable.imageUrl] == null) {
@@ -102,15 +110,7 @@ object Page {
             }
         }
 
-        val fileName = getPageName(index)
-
-        try {
-            if (chapterEntry[ChapterTable.isDownloaded]) {
-                return ChapterDownloadHelper.getImage(mangaId, chapterId, index)
-            }
-        } catch (_: Exception) {
-            // ignore and fetch again
-        }
+        val fileName = getPageName(index, chapterEntry[ChapterTable.pageCount])
 
         val cacheSaveDir = getChapterCachePath(mangaId, chapterId)
 
@@ -121,5 +121,8 @@ object Page {
     }
 
     /** converts 0 to "001" */
-    fun getPageName(index: Int): String = String.format("%03d", index + 1)
+    fun getPageName(
+        index: Int,
+        pageCount: Int,
+    ): String = String.format("%0${pageCount.toString().length.coerceAtLeast(3)}d", index + 1)
 }
