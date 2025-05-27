@@ -23,6 +23,7 @@
 - [Syncing With Mihon (Tachiyomi)](#syncing-with-mihon-tachiyomi)
 - [Troubleshooting and Support](#troubleshooting-and-support)
 - [Contributing and Technical info](#contributing-and-technical-info)
+- [Translation](#translation)
 - [Credit](#credit)
 - [License](#license)
 <!-- Generated with https://ecotrust-canada.github.io/markdown-toc/ -->
@@ -52,9 +53,10 @@ You can use Mihon (Tachiyomi) to access your Suwayomi-Server. For more info look
 - Ability to download Manga for offline read
 - Backup and restore support powered by Mihon (Tachiyomi)-compatible Backups
 - Automated backup creations
-- Tracking via [MyAnimeList](https://myanimelist.net/), [AniList](https://anilist.co/), [MangaUpdates](https://www.mangaupdates.com/)
+- Tracking via [MyAnimeList](https://myanimelist.net/), [AniList](https://anilist.co/), [MangaUpdates](https://www.mangaupdates.com/), etc.
 - [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) support to bypass Cloudflare protection
 - Automated WebUI updates (supports the default WebUI and VUI)
+- OPDS and OPDS-PSE support (endpoint: `/api/opds/v1.2`)
 
 # Suwayomi client projects
 **You need a client/user interface app as a front-end for Suwayomi-Server, if you [Directly Download Suwayomi-Server](https://github.com/Suwayomi/Suwayomi-Server/releases/latest) you'll get a bundled version of [Suwayomi-WebUI](https://github.com/Suwayomi/Suwayomi-WebUI) with it.**
@@ -104,19 +106,22 @@ yay -S tachidesk
 ```
 
 ### Debian/Ubuntu
-Download the latest deb package from the release section or Install from the MPR
-```
-git clone https://mpr.makedeb.org/suwayomi-server.git
-cd suwayomi-server
-makedeb -si
-```
+Download the latest deb package from the release section.
 
-### Ubuntu
-```
-sudo add-apt-repository ppa:suwayomi/suwayomi-server
-sudo apt update
-sudo apt install suwayomi-server
-```
+> [!CAUTION]
+> These options are outdated and unmaintained ([relevant issue](https://github.com/Suwayomi/Suwayomi-Server/issues/1318))
+> ### MPR
+> ```
+> git clone https://mpr.makedeb.org/tachidesk-server.git
+> cd tachidesk-server
+> makedeb -si
+> ```
+> ### Ubuntu
+> ```
+> sudo add-apt-repository ppa:suwayomi/tachidesk-server
+> sudo apt update
+> sudo apt install tachidesk-server
+> ```
 
 ### NixOS
 You can deploy Suwayomi on NixOS using the module `services.suwayomi-server` in your configuration:
@@ -170,6 +175,15 @@ See [this troubleshooting wiki page](https://github.com/Suwayomi/Suwayomi-Server
 
 ## Contributing and Technical info
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Translation
+Feel free to translate the project on [Weblate](https://hosted.weblate.org/projects/suwayomi/suwayomi-server/)
+
+<details><summary>Translation Progress</summary>
+<a href="https://hosted.weblate.org/engage/suwayomi-server/">
+<img src="https://hosted.weblate.org/widgets/suwayomi/-/suwayomi-server/multi-auto.svg" alt="Translation status" />
+</a>
+</details>
 
 ## Credit
 This project is a spiritual successor of [TachiWeb-Server](https://github.com/Tachiweb/TachiWeb-server), Many of the ideas and the groundwork adopted in this project comes from TachiWeb.
