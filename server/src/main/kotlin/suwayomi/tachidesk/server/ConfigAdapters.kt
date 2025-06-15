@@ -19,3 +19,9 @@ object BooleanConfigAdapter : ConfigAdapter<Boolean> {
 object DoubleConfigAdapter : ConfigAdapter<Double> {
     override fun toType(configValue: String): Double = configValue.toDouble()
 }
+
+class EnumConfigAdapter<T : Enum<T>>(
+    private val enumClass: Class<T>,
+) : ConfigAdapter<T> {
+    override fun toType(configValue: String): T = java.lang.Enum.valueOf(enumClass, configValue.uppercase())
+}
