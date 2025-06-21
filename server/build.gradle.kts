@@ -43,7 +43,6 @@ dependencies {
     // GraphQL
     implementation(libs.graphql.kotlin.server)
     implementation(libs.graphql.kotlin.scheme)
-    implementation(libs.graphql.java.core)
     implementation(libs.graphql.java.scalars)
 
     // Exposed ORM
@@ -84,6 +83,9 @@ dependencies {
     // AndroidCompat
     implementation(projects.androidCompat)
     implementation(projects.androidCompat.config)
+
+    // i18n
+    implementation(projects.server.i18n)
 
     // uncomment to test extensions directly
 //    implementation(fileTree("lib/"))
