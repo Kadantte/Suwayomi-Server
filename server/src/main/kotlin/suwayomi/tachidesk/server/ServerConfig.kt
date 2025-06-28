@@ -23,6 +23,10 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
+import org.jetbrains.exposed.sql.SortOrder
+import suwayomi.tachidesk.graphql.types.WebUIChannel
+import suwayomi.tachidesk.graphql.types.WebUIFlavor
+import suwayomi.tachidesk.graphql.types.WebUIInterface
 import xyz.nulldev.ts.config.GlobalConfigManager
 import xyz.nulldev.ts.config.SystemPropertyOverridableConfigModule
 import kotlin.reflect.KProperty
@@ -98,11 +102,11 @@ class ServerConfig(
 
     // webUI
     val webUIEnabled: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
-    val webUIFlavor: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
+    val webUIFlavor: MutableStateFlow<WebUIFlavor> by OverrideConfigValue(EnumConfigAdapter(WebUIFlavor::class.java))
     val initialOpenInBrowserEnabled: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
-    val webUIInterface: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
+    val webUIInterface: MutableStateFlow<WebUIInterface> by OverrideConfigValue(EnumConfigAdapter(WebUIInterface::class.java))
     val electronPath: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
-    val webUIChannel: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
+    val webUIChannel: MutableStateFlow<WebUIChannel> by OverrideConfigValue(EnumConfigAdapter(WebUIChannel::class.java))
     val webUIUpdateCheckInterval: MutableStateFlow<Double> by OverrideConfigValue(DoubleConfigAdapter)
 
     // downloader
@@ -115,6 +119,14 @@ class ServerConfig(
 
     // extensions
     val extensionRepos: MutableStateFlow<List<String>> by OverrideConfigValues(StringConfigAdapter)
+
+    // playwright webview
+    val playwrightBrowser: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
+    val playwrightWsEndpoint: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
+    val playwrightSandbox: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+
+    // webview
+    val webviewImpl: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
 
     // requests
     val maxSourcesInParallel: MutableStateFlow<Int> by OverrideConfigValue(IntConfigAdapter)
@@ -154,6 +166,15 @@ class ServerConfig(
     val flareSolverrSessionName: MutableStateFlow<String> by OverrideConfigValue(StringConfigAdapter)
     val flareSolverrSessionTtl: MutableStateFlow<Int> by OverrideConfigValue(IntConfigAdapter)
     val flareSolverrAsResponseFallback: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+
+    // opds settings
+    val opdsUseBinaryFileSizes: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+    val opdsItemsPerPage: MutableStateFlow<Int> by OverrideConfigValue(IntConfigAdapter)
+    val opdsEnablePageReadProgress: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+    val opdsMarkAsReadOnDownload: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+    val opdsShowOnlyUnreadChapters: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+    val opdsShowOnlyDownloadedChapters: MutableStateFlow<Boolean> by OverrideConfigValue(BooleanConfigAdapter)
+    val opdsChapterSortOrder: MutableStateFlow<SortOrder> by OverrideConfigValue(EnumConfigAdapter(SortOrder::class.java))
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun <T> subscribeTo(

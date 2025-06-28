@@ -38,6 +38,10 @@ main() {
 
   download_launcher
 
+  if [ ! -f scripts/resources/catch_abort.so ]; then
+    gcc -fPIC -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -shared scripts/resources/catch_abort.c -lpthread -o scripts/resources/catch_abort.so
+  fi
+
   case "$OS" in
     debian-all)
       RELEASE="$RELEASE_NAME.deb"
@@ -52,7 +56,7 @@ main() {
       ;;
     linux-x64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.6+7"
+      JRE_RELEASE="jdk-21.0.7+6"
       JRE="OpenJDK21U-jre_x64_linux_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').tar.gz"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
@@ -68,7 +72,7 @@ main() {
       ;;
     macOS-x64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.6+7"
+      JRE_RELEASE="jdk-21.0.7+6"
       JRE="OpenJDK21U-jre_x64_mac_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').tar.gz"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
@@ -78,13 +82,13 @@ main() {
       setup_jre
       tree "$RELEASE_NAME"
 
-      RELEASE="$RELEASE_NAME.zip"
+      RELEASE="$RELEASE_NAME.tar.gz"
       make_macos_bundle
       move_release_to_output_dir
       ;;
     macOS-arm64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.6+7"
+      JRE_RELEASE="jdk-21.0.7+6"
       JRE="OpenJDK21U-jre_aarch64_mac_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').tar.gz"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
@@ -94,13 +98,13 @@ main() {
       setup_jre
       tree "$RELEASE_NAME"
 
-      RELEASE="$RELEASE_NAME.zip"
+      RELEASE="$RELEASE_NAME.tar.gz"
       make_macos_bundle
       move_release_to_output_dir
       ;;
     windows-x64)
       # https://github.com/adoptium/temurin21-binaries/releases/
-      JRE_RELEASE="jdk-21.0.6+7"
+      JRE_RELEASE="jdk-21.0.7+6"
       JRE="OpenJDK21U-jre_x64_windows_hotspot_$(echo "$JRE_RELEASE" | sed 's/jdk//;s/-//g;s/+/_/g').zip"
       JRE_DIR="$JRE_RELEASE-jre"
       JRE_URL="https://github.com/adoptium/temurin21-binaries/releases/download/$JRE_RELEASE/$JRE"
@@ -148,6 +152,8 @@ download_electron() {
 
 setup_jre() {
   if [ -d "jre" ]; then
+    chmod +x ./jre/bin/java
+    chmod +x ./jre/lib/jspawnhelper
     mv "jre" "$RELEASE_NAME/jre"
   else
     if [ ! -f "$JRE" ]; then
@@ -182,6 +188,7 @@ make_linux_bundle() {
   cp "$JAR" "$RELEASE_NAME/bin/Suwayomi-Server.jar"
   cp "scripts/resources/suwayomi-launcher.sh" "$RELEASE_NAME/"
   cp "scripts/resources/suwayomi-server.sh" "$RELEASE_NAME/"
+  cp "scripts/resources/catch_abort.so" "$RELEASE_NAME/bin/"
 
   tar -I "gzip -9" -cvf "$RELEASE" "$RELEASE_NAME/"
 }
@@ -191,7 +198,7 @@ make_macos_bundle() {
   cp "$JAR" "$RELEASE_NAME/bin/Suwayomi-Server.jar"
   cp "scripts/resources/Suwayomi Launcher.command" "$RELEASE_NAME/"
 
-  zip -9 -r "$RELEASE" "$RELEASE_NAME/"
+  tar -I "gzip -9" -cvf "$RELEASE" "$RELEASE_NAME/"
 }
 
 # https://wiki.debian.org/SimplePackagingTutorial
@@ -206,6 +213,7 @@ make_deb_package() {
   mv "$RELEASE_NAME/Suwayomi-Launcher.jar" "$RELEASE_NAME/$source_dir/Suwayomi-Launcher.jar"
   cp "$JAR" "$RELEASE_NAME/$source_dir/Suwayomi-Server.jar"
   copy_linux_package_assets_to "$RELEASE_NAME/$source_dir/"
+  cp "scripts/resources/catch_abort.so" "$RELEASE_NAME/$source_dir/"
   tar -I "gzip" -C "$RELEASE_NAME/" -cvf "$upstream_source" "$source_dir"
 
   cp -r "scripts/resources/deb/" "$RELEASE_NAME/$source_dir/debian/"
