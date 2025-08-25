@@ -22,6 +22,7 @@ import suwayomi.tachidesk.graphql.queries.filter.andFilterWithCompare
 import suwayomi.tachidesk.graphql.queries.filter.andFilterWithCompareEntity
 import suwayomi.tachidesk.graphql.queries.filter.andFilterWithCompareString
 import suwayomi.tachidesk.graphql.queries.filter.applyOps
+import suwayomi.tachidesk.graphql.server.getAttribute
 import suwayomi.tachidesk.graphql.server.primitives.Cursor
 import suwayomi.tachidesk.graphql.server.primitives.Order
 import suwayomi.tachidesk.graphql.server.primitives.OrderBy
@@ -39,14 +40,20 @@ import suwayomi.tachidesk.graphql.types.TrackerType
 import suwayomi.tachidesk.manga.impl.track.tracker.TrackerManager
 import suwayomi.tachidesk.manga.model.table.TrackRecordTable
 import suwayomi.tachidesk.manga.model.table.insertAll
+import suwayomi.tachidesk.server.JavalinSetup.Attribute
 import suwayomi.tachidesk.server.JavalinSetup.future
+import suwayomi.tachidesk.server.JavalinSetup.getAttribute
+import suwayomi.tachidesk.server.user.requireUser
 import java.util.concurrent.CompletableFuture
 
 class TrackQuery {
     fun tracker(
         dataFetchingEnvironment: DataFetchingEnvironment,
         id: Int,
-    ): CompletableFuture<TrackerType> = dataFetchingEnvironment.getValueFromDataLoader<Int, TrackerType>("TrackerDataLoader", id)
+    ): CompletableFuture<TrackerType> {
+        dataFetchingEnvironment.getAttribute(Attribute.TachideskUser).requireUser()
+        return dataFetchingEnvironment.getValueFromDataLoader<Int, TrackerType>("TrackerDataLoader", id)
+    }
 
     enum class TrackerOrderBy {
         ID,
@@ -115,6 +122,7 @@ class TrackQuery {
     )
 
     fun trackers(
+        dataFetchingEnvironment: DataFetchingEnvironment,
         condition: TrackerCondition? = null,
         @GraphQLDeprecated(
             "Replaced with order",
@@ -133,6 +141,7 @@ class TrackQuery {
         last: Int? = null,
         offset: Int? = null,
     ): TrackerNodeList {
+        dataFetchingEnvironment.getAttribute(Attribute.TachideskUser).requireUser()
         val (queryResults, resultsAsType) =
             run {
                 var res = TrackerManager.services.map { TrackerType(it) }
@@ -240,8 +249,10 @@ class TrackQuery {
     fun trackRecord(
         dataFetchingEnvironment: DataFetchingEnvironment,
         id: Int,
-    ): CompletableFuture<TrackRecordType> =
-        dataFetchingEnvironment.getValueFromDataLoader<Int, TrackRecordType>("TrackRecordDataLoader", id)
+    ): CompletableFuture<TrackRecordType> {
+        dataFetchingEnvironment.getAttribute(Attribute.TachideskUser).requireUser()
+        return dataFetchingEnvironment.getValueFromDataLoader<Int, TrackRecordType>("TrackRecordDataLoader", id)
+    }
 
     enum class TrackRecordOrderBy(
         override val column: Column<*>,
@@ -256,6 +267,7 @@ class TrackQuery {
         SCORE(TrackRecordTable.score),
         START_DATE(TrackRecordTable.startDate),
         FINISH_DATE(TrackRecordTable.finishDate),
+        PRIVATE(TrackRecordTable.private),
         ;
 
         override fun greater(cursor: Cursor): Op<Boolean> =
@@ -270,6 +282,7 @@ class TrackQuery {
                 SCORE -> greaterNotUnique(TrackRecordTable.score, TrackRecordTable.id, cursor, String::toDouble)
                 START_DATE -> greaterNotUnique(TrackRecordTable.startDate, TrackRecordTable.id, cursor, String::toLong)
                 FINISH_DATE -> greaterNotUnique(TrackRecordTable.finishDate, TrackRecordTable.id, cursor, String::toLong)
+                PRIVATE -> greaterNotUnique(TrackRecordTable.private, TrackRecordTable.id, cursor, String::toBoolean)
             }
 
         override fun less(cursor: Cursor): Op<Boolean> =
@@ -284,6 +297,7 @@ class TrackQuery {
                 SCORE -> lessNotUnique(TrackRecordTable.score, TrackRecordTable.id, cursor, String::toDouble)
                 START_DATE -> lessNotUnique(TrackRecordTable.startDate, TrackRecordTable.id, cursor, String::toLong)
                 FINISH_DATE -> lessNotUnique(TrackRecordTable.finishDate, TrackRecordTable.id, cursor, String::toLong)
+                PRIVATE -> lessNotUnique(TrackRecordTable.private, TrackRecordTable.id, cursor, String::toBoolean)
             }
 
         override fun asCursor(type: TrackRecordType): Cursor {
@@ -299,6 +313,7 @@ class TrackQuery {
                     SCORE -> type.id.toString() + "-" + type.score
                     START_DATE -> type.id.toString() + "-" + type.startDate
                     FINISH_DATE -> type.id.toString() + "-" + type.finishDate
+                    PRIVATE -> type.id.toString() + "-" + type.private
                 }
             return Cursor(value)
         }
@@ -323,6 +338,7 @@ class TrackQuery {
         val remoteUrl: String? = null,
         val startDate: Long? = null,
         val finishDate: Long? = null,
+        val private: Boolean? = null,
     ) : HasGetOp {
         override fun getOp(): Op<Boolean>? {
             val opAnd = OpAnd()
@@ -339,6 +355,7 @@ class TrackQuery {
             opAnd.eq(remoteUrl, TrackRecordTable.remoteUrl)
             opAnd.eq(startDate, TrackRecordTable.startDate)
             opAnd.eq(finishDate, TrackRecordTable.finishDate)
+            opAnd.eq(private, TrackRecordTable.private)
 
             return opAnd.op
         }
@@ -358,6 +375,7 @@ class TrackQuery {
         val remoteUrl: StringFilter? = null,
         val startDate: LongFilter? = null,
         val finishDate: LongFilter? = null,
+        val private: BooleanFilter? = null,
         override val and: List<TrackRecordFilter>? = null,
         override val or: List<TrackRecordFilter>? = null,
         override val not: TrackRecordFilter? = null,
@@ -377,10 +395,12 @@ class TrackQuery {
                 andFilterWithCompareString(TrackRecordTable.remoteUrl, remoteUrl),
                 andFilterWithCompare(TrackRecordTable.startDate, startDate),
                 andFilterWithCompare(TrackRecordTable.finishDate, finishDate),
+                andFilterWithCompare(TrackRecordTable.private, private),
             )
     }
 
     fun trackRecords(
+        dataFetchingEnvironment: DataFetchingEnvironment,
         condition: TrackRecordCondition? = null,
         filter: TrackRecordFilter? = null,
         @GraphQLDeprecated(
@@ -400,6 +420,7 @@ class TrackQuery {
         last: Int? = null,
         offset: Int? = null,
     ): TrackRecordNodeList {
+        dataFetchingEnvironment.getAttribute(Attribute.TachideskUser).requireUser()
         val queryResults =
             transaction {
                 val res = TrackRecordTable.selectAll()
@@ -482,8 +503,12 @@ class TrackQuery {
         val trackSearches: List<TrackSearchType>,
     )
 
-    fun searchTracker(input: SearchTrackerInput): CompletableFuture<SearchTrackerPayload> =
+    fun searchTracker(
+        dataFetchingEnvironment: DataFetchingEnvironment,
+        input: SearchTrackerInput,
+    ): CompletableFuture<SearchTrackerPayload> =
         future {
+            dataFetchingEnvironment.getAttribute(Attribute.TachideskUser).requireUser()
             val tracker =
                 requireNotNull(TrackerManager.getTracker(input.trackerId)) {
                     "Tracker not found"
